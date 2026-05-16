@@ -1,0 +1,17 @@
+{
+  "name": "passkey-auth-app",
+  "version": "1.0.0",
+  "description": "Passkey Authentication Web App with WebAuthn",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@simplewebauthn/server": "^13.3.0",
+    "express": "^4.21.0",
+    "express-session": "^1.18.1",
+    "sql.js": "^1.11.0",
+    "uuid": "^10.0.0"
+  }
+}

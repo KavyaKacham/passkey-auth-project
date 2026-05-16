@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="SentinelAuth — Next-gen passwordless authentication powered by WebAuthn passkeys. Biometric security for the modern web.">
+  <title>SentinelAuth — Passwordless Security Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- ════════ CYBER BACKGROUND ════════ -->
+  <canvas id="cyber-canvas"></canvas>
+
+  <!-- ════════ AUTH SCREEN ════════ -->
+  <div id="auth-screen" class="screen active">
+    <div class="auth-layout">
+
+      <!-- Left: Hero Panel -->
+      <div class="auth-hero">
+        <div class="hero-content">
+          <div class="sentinel-logo">
+            <div class="logo-ring">
+              <div class="logo-ring-inner"></div>
+              <svg class="logo-shield" viewBox="0 0 64 64" width="48" height="48">
+                <path d="M32 4L8 16v16c0 14.4 10.24 27.84 24 32 13.76-4.16 24-17.6 24-32V16L32 4zm0 8l16 8v12c0 10.4-6.8 20.16-16 23.6-9.2-3.44-16-13.2-16-23.6V20l16-8z" fill="url(#shieldGrad)"/>
+                <path d="M28 34l-4-4-2.83 2.83L28 39.66l12-12-2.83-2.83L28 34z" fill="#00ffd5"/>
+                <defs>
+                  <linearGradient id="shieldGrad" x1="8" y1="4" x2="56" y2="64">
+                    <stop offset="0%" stop-color="#00ffd5"/>
+                    <stop offset="100%" stop-color="#0077ff"/>
+                  </linearGradient>
+                </defs>
+              </svg>
+            </div>
+          </div>
+          <h1 class="hero-title">Sentinel<span class="accent">Auth</span></h1>
+          <p class="hero-tagline">Next-Generation Passwordless Security</p>
+          <div class="hero-features">
+            <div class="feature-pill"><span class="pulse-dot"></span> FIDO2 / WebAuthn</div>
+            <div class="feature-pill"><span class="pulse-dot"></span> Biometric Auth</div>
+            <div class="feature-pill"><span class="pulse-dot"></span> Zero-Password</div>
+          </div>
+          <div class="hero-stats">
+            <div class="hero-stat"><span class="stat-num">256</span><span class="stat-lbl">-bit Encryption</span></div>
+            <div class="hero-stat-sep"></div>
+            <div class="hero-stat"><span class="stat-num">0</span><span class="stat-lbl">Passwords Stored</span></div>
+            <div class="hero-stat-sep"></div>
+            <div class="hero-stat"><span class="stat-num">100%</span><span class="stat-lbl">Phishing Proof</span></div>
+          </div>
+        </div>
+        <div class="scan-line"></div>
+      </div>
+
+      <!-- Right: Auth Form Panel -->
+      <div class="auth-panel">
+        <div class="auth-card">
+          <div class="auth-card-glow"></div>
+
+          <!-- Tab Switcher -->
+          <div class="auth-tabs">
+            <button class="auth-tab active" id="tab-login" onclick="switchTab('login')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>
+              Sign In
+            </button>
+            <button class="auth-tab" id="tab-register" onclick="switchTab('register')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+              Register
+            </button>
+          </div>
+
+          <!-- Login Form -->
+          <div id="login-form" class="auth-form active">
+            <div class="form-field">
+              <label for="login-username">Identity</label>
+              <div class="field-input">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                <input type="text" id="login-username" placeholder="Enter your username" autocomplete="username webauthn">
+              </div>
+            </div>
+
+            <button class="btn-cyber" id="btn-login" onclick="handleLogin()">
+              <span class="btn-cyber-bg"></span>
+              <span class="btn-cyber-text">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                Authenticate with Passkey
+              </span>
+            </button>
+
+            <div class="auth-divider"><span>or use discoverable credential</span></div>
+
+            <button class="btn-ghost" id="btn-login-discoverable" onclick="handleDiscoverableLogin()">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              Use Saved Passkey
+            </button>
+          </div>
+
+          <!-- Register Form -->
+          <div id="register-form" class="auth-form">
+            <div class="form-field">
+              <label for="reg-username">Username</label>
+              <div class="field-input">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                <input type="text" id="reg-username" placeholder="Choose a unique username" autocomplete="username">
+              </div>
+              <span class="field-hint">3–64 chars • letters, numbers, . - _</span>
+            </div>
+
+            <div class="form-field">
+              <label for="reg-displayname">Display Name <span class="opt">(optional)</span></label>
+              <div class="field-input">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                <input type="text" id="reg-displayname" placeholder="How should we call you?">
+              </div>
+            </div>
+
+            <button class="btn-cyber" id="btn-register" onclick="handleRegister()">
+              <span class="btn-cyber-bg"></span>
+              <span class="btn-cyber-text">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                Create Secure Identity
+              </span>
+            </button>
+
+            <div class="info-banner">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+              <p>A cryptographic passkey will be created on your device. Your biometrics never leave your device.</p>
+            </div>
+          </div>
+
+          <div id="auth-message" class="msg hidden"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════ DASHBOARD SCREEN ════════ -->
+  <div id="dashboard-screen" class="screen">
+    <div class="dash-layout">
+
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <div class="sidebar-brand">
+          <svg class="sidebar-logo" viewBox="0 0 64 64" width="28" height="28">
+            <path d="M32 4L8 16v16c0 14.4 10.24 27.84 24 32 13.76-4.16 24-17.6 24-32V16L32 4z" fill="url(#sg2)"/>
+            <path d="M28 34l-4-4-2.83 2.83L28 39.66l12-12-2.83-2.83L28 34z" fill="#00ffd5"/>
+            <defs><linearGradient id="sg2" x1="8" y1="4" x2="56" y2="64"><stop offset="0%" stop-color="#00ffd5"/><stop offset="100%" stop-color="#0077ff"/></linearGradient></defs>
+          </svg>
+          <span>Sentinel<span class="accent">Auth</span></span>
+        </div>
+
+        <nav class="sidebar-nav">
+          <a class="nav-item active" data-section="overview" onclick="showSection('overview')">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            Overview
+          </a>
+          <a class="nav-item" data-section="passkeys" onclick="showSection('passkeys')">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+            Passkeys
+          </a>
+          <a class="nav-item" data-section="sessions" onclick="showSection('sessions')">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            Sessions
+          </a>
+          <a class="nav-item" data-section="security" onclick="showSection('security')">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Security
+          </a>
+        </nav>
+
+        <div class="sidebar-profile" id="sidebar-profile">
+          <div class="profile-avatar" id="profile-avatar">U</div>
+          <div class="profile-info">
+            <span class="profile-name" id="profile-name">User</span>
+            <span class="profile-role">Authenticated</span>
+          </div>
+        </div>
+
+        <button class="btn-logout" onclick="handleLogout()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+          Logout
+        </button>
+      </aside>
+
+      <!-- Main Content -->
+      <main class="dash-main">
+        <header class="dash-header">
+          <div>
+            <h2 id="dash-greeting">Welcome back</h2>
+            <p class="dash-subtitle" id="dash-subtitle">Security overview for your account</p>
+          </div>
+          <div class="header-actions">
+            <div class="security-badge" id="security-badge">
+              <span class="badge-dot"></span>
+              <span>Protected</span>
+            </div>
+          </div>
+        </header>
+
+        <!-- OVERVIEW SECTION -->
+        <section id="section-overview" class="dash-section active">
+          <div class="stats-row">
+            <div class="stat-card cyber-border">
+              <div class="stat-card-icon" style="--glow:#00ffd5">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+              </div>
+              <div class="stat-card-data">
+                <span class="stat-val" id="ov-passkeys">0</span>
+                <span class="stat-lbl">Passkeys</span>
+              </div>
+            </div>
+            <div class="stat-card cyber-border">
+              <div class="stat-card-icon" style="--glow:#0077ff">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              </div>
+              <div class="stat-card-data">
+                <span class="stat-val" id="ov-sessions">0</span>
+                <span class="stat-lbl">Active Sessions</span>
+              </div>
+            </div>
+            <div class="stat-card cyber-border">
+              <div class="stat-card-icon" style="--glow:#a855f7">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </div>
+              <div class="stat-card-data">
+                <span class="stat-val" id="ov-created">—</span>
+                <span class="stat-lbl">Member Since</span>
+              </div>
+            </div>
+            <div class="stat-card cyber-border">
+              <div class="stat-card-icon" style="--glow:#00ffd5">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              </div>
+              <div class="stat-card-data">
+                <span class="stat-val" id="ov-status">Secure</span>
+                <span class="stat-lbl">Security Status</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Actions -->
+          <div class="panel cyber-border">
+            <div class="panel-header"><h3>⚡ Quick Actions</h3></div>
+            <div class="quick-actions">
+              <button class="qa-btn" onclick="handleAddPasskey()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                Add New Passkey
+              </button>
+              <button class="qa-btn" onclick="showSection('sessions')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                Manage Sessions
+              </button>
+              <button class="qa-btn" onclick="handleTerminateOtherSessions()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+                Revoke Other Sessions
+              </button>
+            </div>
+          </div>
+
+          <!-- Security Info -->
+          <div class="panel cyber-border info-panel">
+            <div class="panel-header"><h3>🛡️ How SentinelAuth Protects You</h3></div>
+            <div class="info-grid">
+              <div class="info-tile">
+                <div class="info-tile-icon">🔑</div>
+                <h4>Asymmetric Cryptography</h4>
+                <p>Private keys are generated and stored on your device. Only the public key is shared with the server.</p>
+              </div>
+              <div class="info-tile">
+                <div class="info-tile-icon">👁️</div>
+                <h4>Biometric Gating</h4>
+                <p>Authentication requires your fingerprint, face, or device PIN. Biometrics never leave your device.</p>
+              </div>
+              <div class="info-tile">
+                <div class="info-tile-icon">🛑</div>
+                <h4>Phishing Immunity</h4>
+                <p>Passkeys are cryptographically bound to this domain. They cannot work on impersonator sites.</p>
+              </div>
+              <div class="info-tile">
+                <div class="info-tile-icon">☁️</div>
+                <h4>Cloud Sync</h4>
+                <p>Multi-device passkeys sync via iCloud Keychain, Google Password Manager, or Windows Hello.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- PASSKEYS SECTION -->
+        <section id="section-passkeys" class="dash-section">
+          <div class="panel cyber-border">
+            <div class="panel-header">
+              <h3>🔑 Registered Passkeys</h3>
+              <button class="btn-accent" onclick="handleAddPasskey()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                Register New Passkey
+              </button>
+            </div>
+            <div id="passkeys-list" class="items-list">
+              <div class="empty-state">Loading credentials...</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- SESSIONS SECTION -->
+        <section id="section-sessions" class="dash-section">
+          <div class="panel cyber-border">
+            <div class="panel-header">
+              <h3>🖥️ Active Sessions</h3>
+              <button class="btn-danger-outline" onclick="handleTerminateOtherSessions()">Terminate Others</button>
+            </div>
+            <div id="sessions-list" class="items-list">
+              <div class="empty-state">Loading sessions...</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- SECURITY SECTION -->
+        <section id="section-security" class="dash-section">
+          <div class="panel cyber-border">
+            <div class="panel-header"><h3>🛡️ Security Overview</h3></div>
+            <div class="security-checklist" id="security-checklist">
+              <div class="check-item">Loading security status...</div>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" class="loading-overlay hidden">
+    <div class="loader-box">
+      <div class="hex-spinner"><div></div><div></div><div></div></div>
+      <p id="loading-text">Initializing...</p>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
