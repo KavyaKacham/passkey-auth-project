@@ -1,7 +1,14 @@
 let startRegistration, startAuthentication, browserSupportsWebAuthn;
+let localSessionId = localStorage.getItem('dbSessionId') || null;
 document.addEventListener("DOMContentLoaded", () => {
   ({ startRegistration, startAuthentication, browserSupportsWebAuthn } = SimpleWebAuthnBrowser);
 });
+
+function authFetch(url, options = {}) {
+  options.headers = options.headers || {};
+  if (localSessionId) options.headers['x-session-id'] = localSessionId;
+  return fetch(url, options);
+}
 
 // ─── Cyber Canvas Background ────────────────────────────────────
 (function initCyberCanvas() {
@@ -86,7 +93,7 @@ async function handleRegister() {
     showLoading('Verifying credential...');
     const vResp = await fetch('/api/register/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...attResp, _pendingUserId }) });
     const vJSON = await vResp.json(); hideLoading();
-    if (vJSON.verified) { toast('Identity created! Welcome to SentinelAuth 🛡️', 'success'); loadDashboard() }
+    if (vJSON.verified) { if (vJSON.dbSessionId) { localSessionId = vJSON.dbSessionId; localStorage.setItem('dbSessionId', localSessionId); } toast('Identity created! Welcome to SentinelAuth 🛡️', 'success'); loadDashboard() }
     else showMessage(vJSON.error || 'Registration failed', 'error');
   } catch (err) { hideLoading(); showMessage('Network error. Try again.', 'error'); console.error(err) }
 }
@@ -107,7 +114,7 @@ async function handleLogin() {
     const vJ = await vR.json(); hideLoading();
     if (vJ.verified) {
       if (vJ.previousSessionsTerminated > 0) toast(`⚠️ ${vJ.previousSessionsTerminated} previous session(s) terminated`, 'warning');
-      toast('Authentication successful 🔓', 'success'); loadDashboard()
+      if (vJ.dbSessionId) { localSessionId = vJ.dbSessionId; localStorage.setItem('dbSessionId', localSessionId); } toast('Authentication successful 🔓', 'success'); loadDashboard()
     }
     else showMessage(vJ.error || 'Auth failed', 'error');
   } catch (err) { hideLoading(); showMessage('Network error.', 'error'); console.error(err) }
@@ -128,7 +135,7 @@ async function handleDiscoverableLogin() {
     const vJ = await vR.json(); hideLoading();
     if (vJ.verified) {
       if (vJ.previousSessionsTerminated > 0) toast(`⚠️ ${vJ.previousSessionsTerminated} session(s) terminated`, 'warning');
-      toast('Authenticated 🔓', 'success'); loadDashboard()
+      if (vJ.dbSessionId) { localSessionId = vJ.dbSessionId; localStorage.setItem('dbSessionId', localSessionId); } toast('Authenticated 🔓', 'success'); loadDashboard()
     }
     else showMessage(vJ.error || 'Auth failed', 'error');
   } catch (err) { hideLoading(); showMessage('Network error.', 'error'); console.error(err) }
@@ -138,7 +145,7 @@ async function handleDiscoverableLogin() {
 async function loadDashboard() {
   showScreen('dashboard-screen');
   try {
-    const resp = await fetch('/api/me');
+    const resp = await authFetch('/api/me');
     if (!resp.ok) { showScreen('auth-screen'); toast('Session expired', 'error'); return }
     const d = await resp.json();
     // Profile
@@ -225,12 +232,12 @@ function parseUA(ua) {
 async function handleAddPasskey() {
   try {
     showLoading('Generating options...');
-    const oR = await fetch('/api/passkeys/add/options', { method: 'POST' });
+    const oR = await authFetch('/api/passkeys/add/options', { method: 'POST' });
     const optionsJSON = await oR.json(); if (!oR.ok) { hideLoading(); toast(optionsJSON.error, 'error'); return }
     hideLoading(); showLoading('Register your new passkey...');
     let attResp; try { attResp = await startRegistration({ optionsJSON }) } catch (e) { hideLoading(); toast('Cancelled', 'warning'); return }
     showLoading('Verifying...');
-    const vR = await fetch('/api/passkeys/add/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(attResp) });
+    const vR = await authFetch('/api/passkeys/add/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(attResp) });
     const r = await vR.json(); hideLoading();
     if (r.verified) { toast('New passkey registered 🔑', 'success'); loadDashboard() } else toast('Failed', 'error');
   } catch (e) { hideLoading(); toast('Error', 'error'); console.error(e) }
@@ -239,25 +246,25 @@ async function handleAddPasskey() {
 async function handleRemovePasskey(id) {
   if (!confirm('Revoke this passkey? You won\'t be able to authenticate with it.')) return;
   try {
-    const r = await fetch(`/api/passkeys/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    const r = await authFetch(`/api/passkeys/${encodeURIComponent(id)}`, { method: 'DELETE' });
     const j = await r.json(); if (r.ok) { toast('Passkey revoked', 'success'); loadDashboard() } else toast(j.error, 'error');
   } catch (e) { toast('Error', 'error') }
 }
 
 // ─── Session Management ─────────────────────────────────────────
 async function handleTerminateSession(id) {
-  try { const r = await fetch(`/api/sessions/${id}/terminate`, { method: 'POST' }); if (r.ok) { toast('Session terminated', 'success'); loadDashboard() } else { const j = await r.json(); toast(j.error, 'error') } } catch (e) { toast('Error', 'error') }
+  try { const r = await authFetch(`/api/sessions/${id}/terminate`, { method: 'POST' }); if (r.ok) { toast('Session terminated', 'success'); loadDashboard() } else { const j = await r.json(); toast(j.error, 'error') } } catch (e) { toast('Error', 'error') }
 }
 
 async function handleTerminateOtherSessions() {
-  try { const r = await fetch('/api/sessions/terminate-others', { method: 'POST' }); const j = await r.json(); if (r.ok) { toast(`${j.terminatedCount} session(s) terminated`, 'success'); loadDashboard() } else toast(j.error, 'error') } catch (e) { toast('Error', 'error') }
+  try { const r = await authFetch('/api/sessions/terminate-others', { method: 'POST' }); const j = await r.json(); if (r.ok) { toast(`${j.terminatedCount} session(s) terminated`, 'success'); loadDashboard() } else toast(j.error, 'error') } catch (e) { toast('Error', 'error') }
 }
 
 async function handleLogout() {
-  try { await fetch('/api/logout', { method: 'POST' }); toast('Signed out', 'info'); showScreen('auth-screen') } catch (e) { toast('Error', 'error') }
+  try { await authFetch('/api/logout', { method: 'POST' }); toast('Signed out', 'info'); showScreen('auth-screen') } catch (e) { toast('Error', 'error') }
 }
 
 // ─── Init ───────────────────────────────────────────────────────
-(async () => { try { const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 5000); const r = await fetch('/api/auth-status', { signal: controller.signal }); clearTimeout(timeout); const d = await r.json(); if (d.authenticated) loadDashboard() } catch (e) { console.log('Auth status check failed, showing login', e); } })();
+(async () => { try { const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 5000); const r = await authFetch('/api/auth-status', { signal: controller.signal }); clearTimeout(timeout); const d = await r.json(); if (d.authenticated) loadDashboard() } catch (e) { console.log('Auth status check failed, showing login', e); } })();
 document.getElementById('login-username').addEventListener('keydown', e => { if (e.key === 'Enter') handleLogin() });
 document.getElementById('reg-username').addEventListener('keydown', e => { if (e.key === 'Enter') handleRegister() });

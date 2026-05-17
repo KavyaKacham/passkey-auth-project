@@ -55,8 +55,9 @@ app.use(
     resave: false,
     saveUninitialized: true,
     cookie: {
-      secure: process.env.NODE_ENV === 'production',
+      secure: true,
       httpOnly: true,
+      sameSite: 'none',
       maxAge: 24 * 60 * 60 * 1000,
     },
   })
@@ -86,18 +87,32 @@ app.use('/api/', rateLimit);
 
 // Auth Middleware
 async function requireAuth(req, res, next) {
-  if (!req.session.userId || !req.session.dbSessionId) {
+  // Try session first, then fall back to header-based auth
+  let userId = req.session.userId;
+  let dbSessionId = req.session.dbSessionId;
+
+  // Fall back to custom header if session lost (Vercel serverless)
+  if (!userId && req.headers['x-session-id']) {
+    dbSessionId = req.headers['x-session-id'];
+    const dbSession = await getSessionById(dbSessionId);
+    if (dbSession && dbSession.is_active) {
+      userId = dbSession.user_id;
+    }
+  }
+
+  if (!userId || !dbSessionId) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
-  const dbSession = await getSessionById(req.session.dbSessionId);
+  const dbSession = await getSessionById(dbSessionId);
   if (!dbSession || !dbSession.is_active) {
-    req.session.destroy(() => { });
     return res.status(401).json({
-      error: 'Session invalidated. You may have been logged out because another session was started.',
+      error: 'Session invalidated.',
       code: 'SESSION_INVALIDATED'
     });
   }
-  await touchSession(req.session.dbSessionId);
+  req.session.userId = userId;
+  req.session.dbSessionId = dbSessionId;
+  await touchSession(dbSessionId);
   next();
 }
 
@@ -211,7 +226,7 @@ app.post('/api/register/verify', async (req, res) => {
       req.session.userId = user.id;
       req.session.dbSessionId = dbSessionId;
 
-      res.json({ verified: true, username: user.username });
+      res.json({ verified: true, username: user.username, dbSessionId });
     } else {
       res.status(400).json({ verified: false, error: 'Registration verification failed' });
     }
@@ -352,6 +367,7 @@ app.post('/api/login/verify', async (req, res) => {
         verified: true,
         username: user.username,
         previousSessionsTerminated: activeSessions.length,
+        dbSessionId,
       });
     } else {
       res.status(400).json({ verified: false, error: 'Authentication failed' });
@@ -528,6 +544,7 @@ app.get('/api/auth-status', async (req, res) => {
         authenticated: true,
         username: user?.username,
         displayName: user?.display_name,
+        dbSessionId: req.session.dbSessionId,
       });
     }
   }
