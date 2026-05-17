@@ -80,9 +80,9 @@ export async function initDatabase() {
 
   persistDb();
   // Auto-persist every 30 seconds
-  setInterval(persistDb, 30000);
+  //setInterval(persistDb, 30000);
   // Cleanup stale challenges every 5 minutes
-  setInterval(cleanupStaleChallenges, 5 * 60 * 1000);
+  //setInterval(cleanupStaleChallenges, 5 * 60 * 1000);
 
   return db;
 }
