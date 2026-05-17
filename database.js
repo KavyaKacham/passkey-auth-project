@@ -1,116 +1,85 @@
-import initSqlJs from 'sql.js';
+import { initializeApp, cert, getApps } from 'firebase-admin/app';
+import { getDatabase } from 'firebase-admin/database';
 import { randomUUID } from 'crypto';
 
 let db;
 
 export async function initDatabase() {
-  const SQL = await initSqlJs({
-    locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.11.0/${file}`
-  });
-  db = new SQL.Database();
-  db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      username TEXT UNIQUE NOT NULL,
-      display_name TEXT,
-      created_at INTEGER
+  if (getApps().length === 0) {
+    const serviceAccount = JSON.parse(
+      Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf8')
     );
-    CREATE TABLE IF NOT EXISTS credentials (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      webauthn_user_id TEXT,
-      public_key TEXT NOT NULL,
-      counter INTEGER DEFAULT 0,
-      device_type TEXT,
-      backed_up INTEGER DEFAULT 0,
-      transports TEXT,
-      created_at INTEGER,
-      last_used_at INTEGER
-    );
-    CREATE TABLE IF NOT EXISTS challenges (
-      id TEXT PRIMARY KEY,
-      user_id TEXT,
-      session_id TEXT,
-      challenge TEXT NOT NULL,
-      type TEXT,
-      options_json TEXT,
-      created_at INTEGER
-    );
-    CREATE TABLE IF NOT EXISTS sessions (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      is_active INTEGER DEFAULT 1,
-      ip_address TEXT,
-      user_agent TEXT,
-      last_active INTEGER,
-      created_at INTEGER
-    );
-  `);
+    initializeApp({
+      credential: cert(serviceAccount),
+      databaseURL: process.env.FIREBASE_DATABASE_URL,
+    });
+  }
+  db = getDatabase();
   return db;
 }
 
-function run(sql, params = []) {
-  db.run(sql, params);
+function ref(path) {
+  return db.ref(path);
 }
 
-function get(sql, params = []) {
-  const stmt = db.prepare(sql);
-  stmt.bind(params);
-  if (stmt.step()) {
-    const row = stmt.getAsObject();
-    stmt.free();
-    return row;
-  }
-  stmt.free();
-  return null;
-}
+// ─── Users ───────────────────────────────────────────────────────────────────
 
-function all(sql, params = []) {
-  const stmt = db.prepare(sql);
-  stmt.bind(params);
-  const rows = [];
-  while (stmt.step()) rows.push(stmt.getAsObject());
-  stmt.free();
-  return rows;
-}
-
-export function createUser(username, displayName) {
+export async function createUser(username, displayName) {
   const id = randomUUID();
-  run(`INSERT INTO users (id, username, display_name, created_at) VALUES (?, ?, ?, ?)`,
-    [id, username, displayName || username, Date.now()]);
+  const user = { id, username, display_name: displayName || username, created_at: Date.now() };
+  await ref(`users/${id}`).set(user);
+  await ref(`usernames/${username}`).set(id);
+  return user;
+}
+
+export async function getUserByUsername(username) {
+  const snap = await ref(`usernames/${username}`).get();
+  if (!snap.exists()) return null;
+  const id = snap.val();
   return getUserById(id);
 }
 
-export function getUserByUsername(username) {
-  return get(`SELECT * FROM users WHERE username = ?`, [username]);
+export async function getUserById(id) {
+  const snap = await ref(`users/${id}`).get();
+  return snap.exists() ? snap.val() : null;
 }
 
-export function getUserById(id) {
-  return get(`SELECT * FROM users WHERE id = ?`, [id]);
+// ─── Passkeys ────────────────────────────────────────────────────────────────
+
+export async function savePasskey({ id, userId, webAuthnUserID, publicKey, counter, deviceType, backedUp, transports }) {
+  const passkey = {
+    id,
+    user_id: userId,
+    webauthn_user_id: webAuthnUserID,
+    public_key: Buffer.from(publicKey).toString('base64'),
+    counter,
+    device_type: deviceType,
+    backed_up: backedUp ? 1 : 0,
+    transports: JSON.stringify(transports || []),
+    created_at: Date.now(),
+    last_used_at: Date.now(),
+  };
+  await ref(`credentials/${id}`).set(passkey);
+  await ref(`user_credentials/${userId}/${id}`).set(true);
 }
 
-export function savePasskey({ id, userId, webAuthnUserID, publicKey, counter, deviceType, backedUp, transports }) {
-  run(`INSERT INTO credentials (id, user_id, webauthn_user_id, public_key, counter, device_type, backed_up, transports, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, userId, webAuthnUserID, Buffer.from(publicKey).toString('base64'),
-      counter, deviceType, backedUp ? 1 : 0, JSON.stringify(transports || []), Date.now()]);
+export async function getPasskeysByUserId(userId) {
+  const snap = await ref(`user_credentials/${userId}`).get();
+  if (!snap.exists()) return [];
+  const ids = Object.keys(snap.val());
+  const passkeys = await Promise.all(ids.map(id => ref(`credentials/${id}`).get()));
+  return passkeys
+    .filter(s => s.exists())
+    .map(s => formatPasskey(s.val()));
 }
 
-export function getPasskeysByUserId(userId) {
-  const rows = all(`SELECT * FROM credentials WHERE user_id = ?`, [userId]);
-  return rows.map(pk => ({
-    ...pk,
-    publicKey: Buffer.from(pk.public_key, 'base64'),
-    transports: JSON.parse(pk.transports || '[]'),
-    backedUp: pk.backed_up === 1,
-    deviceType: pk.device_type,
-    createdAt: pk.created_at,
-  }));
+export async function getPasskeyById(id) {
+  const snap = await ref(`credentials/${id}`).get();
+  if (!snap.exists()) return null;
+  return formatPasskey(snap.val());
 }
 
-export function getPasskeyById(id) {
-  const pk = get(`SELECT * FROM credentials WHERE id = ?`, [id]);
-  if (!pk) return null;
+function formatPasskey(pk) {
   return {
     ...pk,
     publicKey: Buffer.from(pk.public_key, 'base64'),
@@ -121,74 +90,114 @@ export function getPasskeyById(id) {
   };
 }
 
-export function updatePasskeyCounter(id, counter) {
-  run(`UPDATE credentials SET counter = ?, last_used_at = ? WHERE id = ?`,
-    [counter, Date.now(), id]);
+export async function updatePasskeyCounter(id, counter) {
+  await ref(`credentials/${id}`).update({ counter, last_used_at: Date.now() });
 }
 
-export function deletePasskey(id, userId) {
-  run(`DELETE FROM credentials WHERE id = ? AND user_id = ?`, [id, userId]);
+export async function deletePasskey(id, userId) {
+  await ref(`credentials/${id}`).remove();
+  await ref(`user_credentials/${userId}/${id}`).remove();
 }
 
-export function getPasskeyCountForUser(userId) {
-  const row = get(`SELECT COUNT(*) as count FROM credentials WHERE user_id = ?`, [userId]);
-  return row ? Number(row.count) : 0;
+export async function getPasskeyCountForUser(userId) {
+  const snap = await ref(`user_credentials/${userId}`).get();
+  if (!snap.exists()) return 0;
+  return Object.keys(snap.val()).length;
 }
 
-export function saveChallenge(userId, challenge, type, options) {
-  run(`DELETE FROM challenges WHERE user_id = ?`, [userId]);
-  run(`INSERT INTO challenges (id, user_id, challenge, type, options_json, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-    [randomUUID(), userId, challenge, type, JSON.stringify(options), Date.now()]);
+// ─── Challenges ──────────────────────────────────────────────────────────────
+
+export async function saveChallenge(userId, challenge, type, options) {
+  await ref(`challenges/user_${userId}`).set({
+    id: randomUUID(),
+    user_id: userId,
+    challenge,
+    type,
+    options_json: JSON.stringify(options),
+    created_at: Date.now(),
+  });
 }
 
-export function getChallenge(userId) {
-  const row = get(`SELECT * FROM challenges WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`, [userId]);
-  if (!row) return null;
+export async function getChallenge(userId) {
+  const snap = await ref(`challenges/user_${userId}`).get();
+  if (!snap.exists()) return null;
+  const row = snap.val();
   return { ...row, options_json: JSON.parse(row.options_json) };
 }
 
-export function deleteChallenge(userId) {
-  run(`DELETE FROM challenges WHERE user_id = ?`, [userId]);
+export async function deleteChallenge(userId) {
+  await ref(`challenges/user_${userId}`).remove();
 }
 
-export function saveAnonymousChallenge(sessionId, challenge, options) {
-  run(`INSERT INTO challenges (id, session_id, challenge, type, options_json, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-    [randomUUID(), sessionId, challenge, 'authentication', JSON.stringify(options), Date.now()]);
+export async function saveAnonymousChallenge(sessionId, challenge, options) {
+  const safeId = sessionId.replace(/[.#$[\]]/g, '_');
+  await ref(`challenges/anon_${safeId}`).set({
+    id: randomUUID(),
+    session_id: sessionId,
+    challenge,
+    type: 'authentication',
+    options_json: JSON.stringify(options),
+    created_at: Date.now(),
+  });
 }
 
-export function getAnonymousChallenge(sessionId) {
-  const row = get(`SELECT * FROM challenges WHERE session_id = ? ORDER BY created_at DESC LIMIT 1`, [sessionId]);
-  if (!row) return null;
+export async function getAnonymousChallenge(sessionId) {
+  const safeId = sessionId.replace(/[.#$[\]]/g, '_');
+  const snap = await ref(`challenges/anon_${safeId}`).get();
+  if (!snap.exists()) return null;
+  const row = snap.val();
   return { ...row, options_json: JSON.parse(row.options_json) };
 }
 
-export function deleteAnonymousChallenge(sessionId) {
-  run(`DELETE FROM challenges WHERE session_id = ?`, [sessionId]);
+export async function deleteAnonymousChallenge(sessionId) {
+  const safeId = sessionId.replace(/[.#$[\]]/g, '_');
+  await ref(`challenges/anon_${safeId}`).remove();
 }
 
-export function createSession(userId, ipAddress, userAgent) {
+// ─── Sessions ────────────────────────────────────────────────────────────────
+
+export async function createSession(userId, ipAddress, userAgent) {
   const id = randomUUID();
-  run(`INSERT INTO sessions (id, user_id, is_active, ip_address, user_agent, last_active, created_at) VALUES (?, ?, 1, ?, ?, ?, ?)`,
-    [id, userId, ipAddress, userAgent, Date.now(), Date.now()]);
+  const session = {
+    id,
+    user_id: userId,
+    is_active: 1,
+    ip_address: ipAddress || '',
+    user_agent: userAgent || '',
+    last_active: Date.now(),
+    created_at: Date.now(),
+  };
+  await ref(`sessions/${id}`).set(session);
+  await ref(`user_sessions/${userId}/${id}`).set(true);
   return id;
 }
 
-export function getActiveSessions(userId) {
-  return all(`SELECT * FROM sessions WHERE user_id = ? AND is_active = 1`, [userId]);
+export async function getSessionById(sessionId) {
+  const snap = await ref(`sessions/${sessionId}`).get();
+  return snap.exists() ? snap.val() : null;
 }
 
-export function deactivateSession(sessionId) {
-  run(`UPDATE sessions SET is_active = 0 WHERE id = ?`, [sessionId]);
+export async function getActiveSessions(userId) {
+  const snap = await ref(`user_sessions/${userId}`).get();
+  if (!snap.exists()) return [];
+  const ids = Object.keys(snap.val());
+  const sessions = await Promise.all(ids.map(id => ref(`sessions/${id}`).get()));
+  return sessions
+    .filter(s => s.exists() && s.val().is_active === 1)
+    .map(s => s.val());
 }
 
-export function deactivateAllUserSessions(userId) {
-  run(`UPDATE sessions SET is_active = 0 WHERE user_id = ?`, [userId]);
+export async function deactivateSession(sessionId) {
+  await ref(`sessions/${sessionId}`).update({ is_active: 0 });
 }
 
-export function touchSession(sessionId) {
-  run(`UPDATE sessions SET last_active = ? WHERE id = ?`, [Date.now(), sessionId]);
+export async function deactivateAllUserSessions(userId) {
+  const snap = await ref(`user_sessions/${userId}`).get();
+  if (!snap.exists()) return;
+  const ids = Object.keys(snap.val());
+  await Promise.all(ids.map(id => ref(`sessions/${id}`).update({ is_active: 0 })));
 }
 
-export function getSessionById(sessionId) {
-  return get(`SELECT * FROM sessions WHERE id = ?`, [sessionId]);
+export async function touchSession(sessionId) {
+  await ref(`sessions/${sessionId}`).update({ last_active: Date.now() });
 }

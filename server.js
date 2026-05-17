@@ -40,12 +40,10 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ─── RP Configuration ───────────────────────────────────────────────────────
 const rpName = 'PassKey Vault';
 const rpID = process.env.RP_ID || 'localhost';
 const origin = process.env.ORIGIN || `http://localhost:3000`;
 
-// ─── Middleware ──────────────────────────────────────────────────────────────
 app.use(express.json());
 app.use(express.static('public'));
 app.get('/', (req, res) => {
@@ -53,18 +51,18 @@ app.get('/', (req, res) => {
 });
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'passkey-vault-super-secret-key-' + randomUUID(),
+    secret: process.env.SESSION_SECRET || 'passkey-vault-secret-' + randomUUID(),
     resave: false,
     saveUninitialized: true,
     cookie: {
-      secure: false,
+      secure: process.env.NODE_ENV === 'production',
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000,
     },
   })
 );
 
-// Rate limiting (simple in-memory)
+// Rate limiting
 const rateLimitMap = new Map();
 const RATE_LIMIT_WINDOW = 60 * 1000;
 const RATE_LIMIT_MAX = 20;
@@ -86,12 +84,12 @@ function rateLimit(req, res, next) {
 
 app.use('/api/', rateLimit);
 
-// ─── Auth Middleware ────────────────────────────────────────────────────────
-function requireAuth(req, res, next) {
+// Auth Middleware
+async function requireAuth(req, res, next) {
   if (!req.session.userId || !req.session.dbSessionId) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
-  const dbSession = getSessionById(req.session.dbSessionId);
+  const dbSession = await getSessionById(req.session.dbSessionId);
   if (!dbSession || !dbSession.is_active) {
     req.session.destroy(() => { });
     return res.status(401).json({
@@ -99,7 +97,7 @@ function requireAuth(req, res, next) {
       code: 'SESSION_INVALIDATED'
     });
   }
-  touchSession(req.session.dbSessionId);
+  await touchSession(req.session.dbSessionId);
   next();
 }
 
@@ -121,13 +119,13 @@ app.post('/api/register/options', async (req, res) => {
       return res.status(400).json({ error: 'Username can only contain letters, numbers, dots, dashes, and underscores' });
     }
 
-    const existingUser = getUserByUsername(username);
+    const existingUser = await getUserByUsername(username);
     if (existingUser) {
       return res.status(409).json({ error: 'Username already taken. Please choose another.' });
     }
 
-    const user = createUser(username, displayName || username);
-    const userPasskeys = getPasskeysByUserId(user.id);
+    const user = await createUser(username, displayName || username);
+    const userPasskeys = await getPasskeysByUserId(user.id);
 
     const options = await generateRegistrationOptions({
       rpName,
@@ -146,7 +144,7 @@ app.post('/api/register/options', async (req, res) => {
       supportedAlgorithmIDs: [-7, -257],
     });
 
-    saveChallenge(user.id, options.challenge, 'registration', options);
+    await saveChallenge(user.id, options.challenge, 'registration', options);
     req.session.pendingUserId = user.id;
     res.json(options);
   } catch (error) {
@@ -162,12 +160,12 @@ app.post('/api/register/verify', async (req, res) => {
       return res.status(400).json({ error: 'No pending registration. Please start over.' });
     }
 
-    const user = getUserById(userId);
+    const user = await getUserById(userId);
     if (!user) {
       return res.status(400).json({ error: 'User not found. Please start over.' });
     }
 
-    const challengeData = getChallenge(userId);
+    const challengeData = await getChallenge(userId);
     if (!challengeData || challengeData.type !== 'registration') {
       return res.status(400).json({ error: 'No pending registration challenge. Please start over.' });
     }
@@ -192,7 +190,7 @@ app.post('/api/register/verify', async (req, res) => {
     if (verified && registrationInfo) {
       const { credential, credentialDeviceType, credentialBackedUp } = registrationInfo;
 
-      savePasskey({
+      await savePasskey({
         id: credential.id,
         userId: user.id,
         webAuthnUserID: challengeData.options_json.user.id,
@@ -203,11 +201,11 @@ app.post('/api/register/verify', async (req, res) => {
         transports: credential.transports,
       });
 
-      deleteChallenge(userId);
+      await deleteChallenge(userId);
       delete req.session.pendingUserId;
 
-      deactivateAllUserSessions(user.id);
-      const dbSessionId = createDbSession(user.id, req.ip, req.headers['user-agent']);
+      await deactivateAllUserSessions(user.id);
+      const dbSessionId = await createDbSession(user.id, req.ip, req.headers['user-agent']);
       req.session.userId = user.id;
       req.session.dbSessionId = dbSessionId;
 
@@ -232,12 +230,12 @@ app.post('/api/login/options', async (req, res) => {
       return res.status(400).json({ error: 'Username is required' });
     }
 
-    const user = getUserByUsername(username);
+    const user = await getUserByUsername(username);
     if (!user) {
       return res.status(404).json({ error: 'User not found. Please register first.' });
     }
 
-    const userPasskeys = getPasskeysByUserId(user.id);
+    const userPasskeys = await getPasskeysByUserId(user.id);
     if (userPasskeys.length === 0) {
       return res.status(400).json({ error: 'No passkeys registered for this user.' });
     }
@@ -251,7 +249,7 @@ app.post('/api/login/options', async (req, res) => {
       userVerification: 'required',
     });
 
-    saveChallenge(user.id, options.challenge, 'authentication', options);
+    await saveChallenge(user.id, options.challenge, 'authentication', options);
     req.session.pendingLoginUserId = user.id;
     res.json(options);
   } catch (error) {
@@ -266,7 +264,7 @@ app.get('/api/login/options-discoverable', async (req, res) => {
       rpID,
       userVerification: 'required',
     });
-    saveAnonymousChallenge(req.session.id, options.challenge, options);
+    await saveAnonymousChallenge(req.session.id, options.challenge, options);
     res.json(options);
   } catch (error) {
     console.error('Discoverable login options error:', error);
@@ -280,22 +278,22 @@ app.post('/api/login/verify', async (req, res) => {
     let user, challengeData, expectedChallenge;
 
     if (req.session.pendingLoginUserId) {
-      user = getUserById(req.session.pendingLoginUserId);
-      challengeData = getChallenge(user.id);
+      user = await getUserById(req.session.pendingLoginUserId);
+      challengeData = await getChallenge(user.id);
       if (challengeData) {
         expectedChallenge = challengeData.options_json.challenge;
       }
     }
 
     if (!expectedChallenge) {
-      const anonChallenge = getAnonymousChallenge(req.session.id);
+      const anonChallenge = await getAnonymousChallenge(req.session.id);
       if (anonChallenge) {
         expectedChallenge = anonChallenge.options_json.challenge;
-        const passkey = getPasskeyById(body.id);
+        const passkey = await getPasskeyById(body.id);
         if (passkey) {
-          user = getUserById(passkey.user_id);
+          user = await getUserById(passkey.user_id);
         }
-        deleteAnonymousChallenge(req.session.id);
+        await deleteAnonymousChallenge(req.session.id);
       }
     }
 
@@ -303,7 +301,7 @@ app.post('/api/login/verify', async (req, res) => {
       return res.status(400).json({ error: 'No pending authentication. Please start over.' });
     }
 
-    const passkey = getPasskeyById(body.id);
+    const passkey = await getPasskeyById(body.id);
     if (!passkey) {
       return res.status(400).json({ error: 'Passkey not found.' });
     }
@@ -334,16 +332,16 @@ app.post('/api/login/verify', async (req, res) => {
     const { verified, authenticationInfo } = verification;
 
     if (verified) {
-      updatePasskeyCounter(passkey.id, authenticationInfo.newCounter);
-      deleteChallenge(user.id);
+      await updatePasskeyCounter(passkey.id, authenticationInfo.newCounter);
+      await deleteChallenge(user.id);
       delete req.session.pendingLoginUserId;
 
-      const activeSessions = getActiveSessions(user.id);
+      const activeSessions = await getActiveSessions(user.id);
       if (activeSessions.length > 0) {
-        deactivateAllUserSessions(user.id);
+        await deactivateAllUserSessions(user.id);
       }
 
-      const dbSessionId = createDbSession(user.id, req.ip, req.headers['user-agent']);
+      const dbSessionId = await createDbSession(user.id, req.ip, req.headers['user-agent']);
       req.session.userId = user.id;
       req.session.dbSessionId = dbSessionId;
 
@@ -365,12 +363,12 @@ app.post('/api/login/verify', async (req, res) => {
 // PROTECTED ROUTES
 // ═══════════════════════════════════════════════════════════════════════════
 
-app.get('/api/me', requireAuth, (req, res) => {
-  const user = getUserById(req.session.userId);
+app.get('/api/me', requireAuth, async (req, res) => {
+  const user = await getUserById(req.session.userId);
   if (!user) return res.status(404).json({ error: 'User not found' });
 
-  const passkeys = getPasskeysByUserId(user.id);
-  const activeSessions = getActiveSessions(user.id);
+  const passkeys = await getPasskeysByUserId(user.id);
+  const activeSessions = await getActiveSessions(user.id);
 
   res.json({
     id: user.id,
@@ -396,8 +394,8 @@ app.get('/api/me', requireAuth, (req, res) => {
 
 app.post('/api/passkeys/add/options', requireAuth, async (req, res) => {
   try {
-    const user = getUserById(req.session.userId);
-    const userPasskeys = getPasskeysByUserId(user.id);
+    const user = await getUserById(req.session.userId);
+    const userPasskeys = await getPasskeysByUserId(user.id);
 
     const options = await generateRegistrationOptions({
       rpName,
@@ -416,7 +414,7 @@ app.post('/api/passkeys/add/options', requireAuth, async (req, res) => {
       supportedAlgorithmIDs: [-7, -257],
     });
 
-    saveChallenge(user.id, options.challenge, 'registration', options);
+    await saveChallenge(user.id, options.challenge, 'registration', options);
     res.json(options);
   } catch (error) {
     console.error('Add passkey options error:', error);
@@ -426,8 +424,8 @@ app.post('/api/passkeys/add/options', requireAuth, async (req, res) => {
 
 app.post('/api/passkeys/add/verify', requireAuth, async (req, res) => {
   try {
-    const user = getUserById(req.session.userId);
-    const challengeData = getChallenge(user.id);
+    const user = await getUserById(req.session.userId);
+    const challengeData = await getChallenge(user.id);
 
     if (!challengeData || challengeData.type !== 'registration') {
       return res.status(400).json({ error: 'No pending passkey registration.' });
@@ -447,7 +445,7 @@ app.post('/api/passkeys/add/verify', requireAuth, async (req, res) => {
 
     if (verification.verified && verification.registrationInfo) {
       const { credential, credentialDeviceType, credentialBackedUp } = verification.registrationInfo;
-      savePasskey({
+      await savePasskey({
         id: credential.id,
         userId: user.id,
         webAuthnUserID: challengeData.options_json.user.id,
@@ -457,7 +455,7 @@ app.post('/api/passkeys/add/verify', requireAuth, async (req, res) => {
         backedUp: credentialBackedUp,
         transports: credential.transports,
       });
-      deleteChallenge(user.id);
+      await deleteChallenge(user.id);
       res.json({ verified: true });
     } else {
       res.status(400).json({ verified: false });
@@ -468,49 +466,49 @@ app.post('/api/passkeys/add/verify', requireAuth, async (req, res) => {
   }
 });
 
-app.delete('/api/passkeys/:credentialId', requireAuth, (req, res) => {
+app.delete('/api/passkeys/:credentialId', requireAuth, async (req, res) => {
   const userId = req.session.userId;
   const { credentialId } = req.params;
 
-  const count = getPasskeyCountForUser(userId);
+  const count = await getPasskeyCountForUser(userId);
   if (count <= 1) {
     return res.status(400).json({ error: 'Cannot remove your last passkey. Add another passkey first.' });
   }
 
-  deletePasskey(credentialId, userId);
+  await deletePasskey(credentialId, userId);
   res.json({ success: true });
 });
 
-app.post('/api/sessions/:sessionId/terminate', requireAuth, (req, res) => {
+app.post('/api/sessions/:sessionId/terminate', requireAuth, async (req, res) => {
   const { sessionId } = req.params;
   if (sessionId === req.session.dbSessionId) {
     return res.status(400).json({ error: 'Use the logout endpoint to end your current session.' });
   }
-  const targetSession = getSessionById(sessionId);
+  const targetSession = await getSessionById(sessionId);
   if (!targetSession || targetSession.user_id !== req.session.userId) {
     return res.status(404).json({ error: 'Session not found.' });
   }
-  deactivateSession(sessionId);
+  await deactivateSession(sessionId);
   res.json({ success: true });
 });
 
-app.post('/api/sessions/terminate-others', requireAuth, (req, res) => {
+app.post('/api/sessions/terminate-others', requireAuth, async (req, res) => {
   const userId = req.session.userId;
   const currentDbSessionId = req.session.dbSessionId;
-  const activeSessions = getActiveSessions(userId);
+  const activeSessions = await getActiveSessions(userId);
   let terminated = 0;
   for (const s of activeSessions) {
     if (s.id !== currentDbSessionId) {
-      deactivateSession(s.id);
+      await deactivateSession(s.id);
       terminated++;
     }
   }
   res.json({ success: true, terminatedCount: terminated });
 });
 
-app.post('/api/logout', (req, res) => {
+app.post('/api/logout', async (req, res) => {
   if (req.session.dbSessionId) {
-    deactivateSession(req.session.dbSessionId);
+    await deactivateSession(req.session.dbSessionId);
   }
   req.session.destroy((err) => {
     if (err) return res.status(500).json({ error: 'Failed to logout' });
@@ -518,11 +516,11 @@ app.post('/api/logout', (req, res) => {
   });
 });
 
-app.get('/api/auth-status', (req, res) => {
+app.get('/api/auth-status', async (req, res) => {
   if (req.session.userId && req.session.dbSessionId) {
-    const dbSession = getSessionById(req.session.dbSessionId);
+    const dbSession = await getSessionById(req.session.dbSessionId);
     if (dbSession && dbSession.is_active) {
-      const user = getUserById(req.session.userId);
+      const user = await getUserById(req.session.userId);
       return res.json({
         authenticated: true,
         username: user?.username,
@@ -538,7 +536,7 @@ let dbReady = false;
 
 const initPromise = initDatabase().then(() => {
   dbReady = true;
-  console.log('✅ Database initialized');
+  console.log('✅ Firebase Realtime Database initialized');
 });
 
 export default async function handler(req, res) {
