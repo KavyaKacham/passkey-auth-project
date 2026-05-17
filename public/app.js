@@ -1,7 +1,7 @@
-
-Copy
-
-const { startRegistration, startAuthentication, browserSupportsWebAuthn } = SimpleWebAuthnBrowser;
+let startRegistration, startAuthentication, browserSupportsWebAuthn;
+document.addEventListener("DOMContentLoaded", () => {
+  ({ startRegistration, startAuthentication, browserSupportsWebAuthn } = SimpleWebAuthnBrowser);
+});
 
 // ─── Cyber Canvas Background ────────────────────────────────────
 (function initCyberCanvas() {
