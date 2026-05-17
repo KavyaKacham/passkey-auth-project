@@ -42,8 +42,14 @@ const PORT = process.env.PORT || 3000;
 
 // ─── RP Configuration ───────────────────────────────────────────────────────
 const rpName = 'PassKey Vault';
-const rpID = 'localhost';
-const origin = `http://localhost:${PORT}`;
+
+const rpID = process.env.VERCEL_URL
+  ? process.env.VERCEL_URL.replace('https://', '').replace('http://', '')
+  : 'localhost';
+
+const origin = process.env.VERCEL_URL
+  ? `https://${process.env.VERCEL_URL}`
+  : `http://localhost:${PORT}`;
 
 // ─── Middleware ──────────────────────────────────────────────────────────────
 app.use(express.json());
@@ -70,12 +76,12 @@ function rateLimit(req, res, next) {
   const key = req.ip + ':' + req.path;
   const now = Date.now();
   const entry = rateLimitMap.get(key);
-  
+
   if (!entry || now - entry.start > RATE_LIMIT_WINDOW) {
     rateLimitMap.set(key, { start: now, count: 1 });
     return next();
   }
-  
+
   entry.count++;
   if (entry.count > RATE_LIMIT_MAX) {
     return res.status(429).json({ error: 'Too many requests. Please try again later.' });
@@ -93,8 +99,8 @@ function requireAuth(req, res, next) {
   // Verify the DB session is still active (concurrent login check)
   const dbSession = getSessionById(req.session.dbSessionId);
   if (!dbSession || !dbSession.is_active) {
-    req.session.destroy(() => {});
-    return res.status(401).json({ 
+    req.session.destroy(() => { });
+    return res.status(401).json({
       error: 'Session invalidated. You may have been logged out because another session was started.',
       code: 'SESSION_INVALIDATED'
     });
@@ -379,7 +385,7 @@ app.post('/api/login/verify', async (req, res) => {
 
       // ─── Concurrent Session Edge Case ────────────────────────────
       const activeSessions = getActiveSessions(user.id);
-      
+
       if (activeSessions.length > 0) {
         // Deactivate all existing sessions (single-session policy)
         deactivateAllUserSessions(user.id);
@@ -528,8 +534,8 @@ app.delete('/api/passkeys/:credentialId', requireAuth, (req, res) => {
   // Don't allow removing the last passkey
   const count = getPasskeyCountForUser(userId);
   if (count <= 1) {
-    return res.status(400).json({ 
-      error: 'Cannot remove your last passkey. Add another passkey first.' 
+    return res.status(400).json({
+      error: 'Cannot remove your last passkey. Add another passkey first.'
     });
   }
 
@@ -540,7 +546,7 @@ app.delete('/api/passkeys/:credentialId', requireAuth, (req, res) => {
 // Terminate a specific session
 app.post('/api/sessions/:sessionId/terminate', requireAuth, (req, res) => {
   const { sessionId } = req.params;
-  
+
   // Don't allow terminating your own current session via this endpoint
   if (sessionId === req.session.dbSessionId) {
     return res.status(400).json({ error: 'Use the logout endpoint to end your current session.' });
@@ -559,7 +565,7 @@ app.post('/api/sessions/:sessionId/terminate', requireAuth, (req, res) => {
 app.post('/api/sessions/terminate-others', requireAuth, (req, res) => {
   const userId = req.session.userId;
   const currentDbSessionId = req.session.dbSessionId;
-  
+
   const activeSessions = getActiveSessions(userId);
   let terminated = 0;
   for (const s of activeSessions) {
@@ -568,7 +574,7 @@ app.post('/api/sessions/terminate-others', requireAuth, (req, res) => {
       terminated++;
     }
   }
-  
+
   res.json({ success: true, terminatedCount: terminated });
 });
 
@@ -591,8 +597,8 @@ app.get('/api/auth-status', (req, res) => {
     const dbSession = getSessionById(req.session.dbSessionId);
     if (dbSession && dbSession.is_active) {
       const user = getUserById(req.session.userId);
-      return res.json({ 
-        authenticated: true, 
+      return res.json({
+        authenticated: true,
         username: user?.username,
         displayName: user?.display_name,
       });
@@ -605,10 +611,6 @@ app.get('/api/auth-status', (req, res) => {
 (async () => {
   await initDatabase();
   console.log('✅ Database initialized');
-  app.listen(PORT, () => {
-    console.log(`\n🔐 PassKey Vault is running at http://localhost:${PORT}\n`);
-    console.log(`   RP Name: ${rpName}`);
-    console.log(`   RP ID:   ${rpID}`);
-    console.log(`   Origin:  ${origin}\n`);
-  });
 })();
+
+export default app;
