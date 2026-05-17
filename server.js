@@ -43,13 +43,8 @@ const PORT = process.env.PORT || 3000;
 // ─── RP Configuration ───────────────────────────────────────────────────────
 const rpName = 'PassKey Vault';
 
-const rpID = process.env.VERCEL_URL
-  ? process.env.VERCEL_URL.replace('https://', '').replace('http://', '')
-  : 'localhost';
-
-const origin = process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}`
-  : `http://localhost:${PORT}`;
+const RP_ID = process.env.RP_ID || 'localhost';
+const ORIGIN = process.env.ORIGIN || `http://localhost:3000`;
 
 // ─── Middleware ──────────────────────────────────────────────────────────────
 app.use(express.json());
