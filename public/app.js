@@ -76,6 +76,7 @@ async function handleRegister() {
     const optResp = await fetch('/api/register/options', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, displayName: displayName || username }) });
     const optionsJSON = await optResp.json();
     if (!optResp.ok) { hideLoading(); showMessage(optionsJSON.error, 'error'); return }
+    const _pendingUserId = optionsJSON._pendingUserId;
     hideLoading(); showLoading('Waiting for passkey creation...');
     let attResp;
     try { attResp = await startRegistration({ optionsJSON }) } catch (e) {
@@ -83,7 +84,7 @@ async function handleRegister() {
       showMessage(e.name === 'InvalidStateError' ? 'Authenticator already registered.' : e.name === 'NotAllowedError' ? 'Passkey creation cancelled.' : 'Error: ' + e.message, e.name === 'NotAllowedError' ? 'warning' : 'error'); return
     }
     showLoading('Verifying credential...');
-    const vResp = await fetch('/api/register/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(attResp) });
+    const vResp = await fetch('/api/register/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...attResp, _pendingUserId }) });
     const vJSON = await vResp.json(); hideLoading();
     if (vJSON.verified) { toast('Identity created! Welcome to SentinelAuth 🛡️', 'success'); loadDashboard() }
     else showMessage(vJSON.error || 'Registration failed', 'error');

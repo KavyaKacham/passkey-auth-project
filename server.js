@@ -146,7 +146,9 @@ app.post('/api/register/options', async (req, res) => {
 
     await saveChallenge(user.id, options.challenge, 'registration', options);
     req.session.pendingUserId = user.id;
-    res.json(options);
+    // Also store in a cookie-safe way via response header hint
+    res.setHeader('X-Pending-User', user.id);
+    res.json({ ...options, _pendingUserId: user.id });
   } catch (error) {
     console.error('Registration options error:', error);
     res.status(500).json({ error: 'Failed to generate registration options' });
@@ -155,7 +157,7 @@ app.post('/api/register/options', async (req, res) => {
 
 app.post('/api/register/verify', async (req, res) => {
   try {
-    const userId = req.session.pendingUserId;
+    const userId = req.session.pendingUserId || req.body._pendingUserId;
     if (!userId) {
       return res.status(400).json({ error: 'No pending registration. Please start over.' });
     }
@@ -251,7 +253,7 @@ app.post('/api/login/options', async (req, res) => {
 
     await saveChallenge(user.id, options.challenge, 'authentication', options);
     req.session.pendingLoginUserId = user.id;
-    res.json(options);
+    res.json({ ...options, _pendingUserId: user.id });
   } catch (error) {
     console.error('Login options error:', error);
     res.status(500).json({ error: 'Failed to generate authentication options' });
@@ -277,8 +279,9 @@ app.post('/api/login/verify', async (req, res) => {
     const body = req.body;
     let user, challengeData, expectedChallenge;
 
-    if (req.session.pendingLoginUserId) {
-      user = await getUserById(req.session.pendingLoginUserId);
+    const pendingLoginId = req.session.pendingLoginUserId || req.body._pendingUserId;
+    if (pendingLoginId) {
+      user = await getUserById(pendingLoginId);
       challengeData = await getChallenge(user.id);
       if (challengeData) {
         expectedChallenge = challengeData.options_json.challenge;
