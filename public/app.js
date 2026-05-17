@@ -155,7 +155,7 @@ async function loadDashboard() {
     // Stats
     document.getElementById('ov-passkeys').textContent = d.passkeys.length;
     document.getElementById('ov-sessions').textContent = d.activeSessions.length;
-    document.getElementById('ov-created').textContent = new Date(d.createdAt + 'Z').toLocaleDateString();
+    document.getElementById('ov-created').textContent = new Date(d.createdAt).toLocaleDateString();
     const hasMulti = d.passkeys.some(p => p.deviceType === 'multiDevice');
     const hasBacked = d.passkeys.some(p => p.backedUp);
     document.getElementById('ov-status').textContent = d.passkeys.length > 1 && hasMulti ? 'Excellent' : d.passkeys.length >= 1 ? 'Good' : 'At Risk';
