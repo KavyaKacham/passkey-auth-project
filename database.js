@@ -6,13 +6,12 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DB_PATH = path.join(__dirname, 'passkey_auth.db');
-
+const DB_PATH = '/tmp/passkey_auth.db';
 let db;
 
 export async function initDatabase() {
   const SQL = await initSqlJs();
-  
+
   // Load existing DB file if present
   if (fs.existsSync(DB_PATH)) {
     const buffer = fs.readFileSync(DB_PATH);
@@ -76,8 +75,8 @@ export async function initDatabase() {
   `);
 
   // Create indexes (IF NOT EXISTS not supported for indexes in all SQLite versions, use try)
-  try { db.run('CREATE INDEX idx_passkeys_user ON passkeys(user_id)'); } catch {}
-  try { db.run('CREATE INDEX idx_sessions_user ON sessions(user_id)'); } catch {}
+  try { db.run('CREATE INDEX idx_passkeys_user ON passkeys(user_id)'); } catch { }
+  try { db.run('CREATE INDEX idx_sessions_user ON sessions(user_id)'); } catch { }
 
   persistDb();
   // Auto-persist every 30 seconds
@@ -148,14 +147,14 @@ export function savePasskey(passkey) {
   // Convert Uint8Array to Buffer for storage
   const pkBuf = passkey.publicKey instanceof Uint8Array
     ? Array.from(passkey.publicKey) : passkey.publicKey;
-  
+
   db.run(
     `INSERT INTO passkeys (id, user_id, webauthn_user_id, public_key, counter, device_type, backed_up, transports)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [passkey.id, passkey.userId, passkey.webAuthnUserID,
-     pkBuf, passkey.counter, passkey.deviceType,
-     passkey.backedUp ? 1 : 0,
-     passkey.transports ? passkey.transports.join(',') : null]
+      pkBuf, passkey.counter, passkey.deviceType,
+    passkey.backedUp ? 1 : 0,
+    passkey.transports ? passkey.transports.join(',') : null]
   );
   persistDb();
 }
