@@ -103,7 +103,7 @@ async function handleLogin() {
     let asseResp;
     try { asseResp = await startAuthentication({ optionsJSON }) } catch (e) { hideLoading(); showMessage(e.name === 'NotAllowedError' ? 'Authentication cancelled.' : 'Error: ' + e.message, e.name === 'NotAllowedError' ? 'warning' : 'error'); return }
     showLoading('Verifying...');
-    const vR = await fetch('/api/login/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(asseResp) });
+    const vR = await fetch('/api/login/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...asseResp, _pendingUserId: optionsJSON._pendingUserId }) });
     const vJ = await vR.json(); hideLoading();
     if (vJ.verified) {
       if (vJ.previousSessionsTerminated > 0) toast(`⚠️ ${vJ.previousSessionsTerminated} previous session(s) terminated`, 'warning');
@@ -124,7 +124,7 @@ async function handleDiscoverableLogin() {
     let asseResp;
     try { asseResp = await startAuthentication({ optionsJSON }) } catch (e) { hideLoading(); showMessage(e.name === 'NotAllowedError' ? 'Cancelled.' : 'Error: ' + e.message, e.name === 'NotAllowedError' ? 'warning' : 'error'); return }
     showLoading('Verifying...');
-    const vR = await fetch('/api/login/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(asseResp) });
+    const vR = await fetch('/api/login/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...asseResp, _pendingUserId: optionsJSON._pendingUserId }) });
     const vJ = await vR.json(); hideLoading();
     if (vJ.verified) {
       if (vJ.previousSessionsTerminated > 0) toast(`⚠️ ${vJ.previousSessionsTerminated} session(s) terminated`, 'warning');
